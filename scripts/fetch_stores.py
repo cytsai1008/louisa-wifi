@@ -16,6 +16,8 @@ URL = "https://www.louisacoffee.co/visit_result"
 # One query never returns everything, so union a few broad ones.
 QUERIES = [("name", "門市"), ("address", "路"), ("address", "街"), ("address", "號"), ("name", "")]
 OUT = Path(__file__).resolve().parent.parent / "data" / "stores.json"
+# Values seen in the store (e.g. on the Wi-Fi sign) that the website gets wrong.
+OVERRIDES = OUT.parent / "overrides.json"
 
 
 def fetch(field, value):
@@ -77,14 +79,20 @@ def main():
             stores.setdefault(s["name"], s)
         print(f"{field}={value!r}: {len(stores)} stores so far", file=sys.stderr)
 
+    overrides = json.loads(OVERRIDES.read_text(encoding="utf-8")) if OVERRIDES.exists() else {}
+    for name in overrides.keys() - stores.keys():
+        print(f"override for unknown store {name!r}", file=sys.stderr)
+
     out = []
     for s in sorted(stores.values(), key=lambda s: s["name"]):
-        pw = passwords(s["phone"])
+        o = overrides.get(s["name"], {})
+        pw = list(dict.fromkeys(o.get("passwords", []) + passwords(s["phone"])))
         if not pw:
             print(f"skip {s['name']}: no usable phone ({s['phone']!r})", file=sys.stderr)
             continue
         if not (21 < s["lat"] < 26.5 and 118 < s["lng"] < 122.5):
             s["lat"] = s["lng"] = 0.0  # unknown; still searchable by name
+        s["lat"], s["lng"] = o.get("lat", s["lat"]), o.get("lng", s["lng"])
         out.append({"name": s["name"], "address": s["address"], "phone": s["phone"],
                     "lat": round(s["lat"], 6), "lng": round(s["lng"], 6), "passwords": pw})
 
